@@ -35,30 +35,35 @@ def write_block_bitmap(fs, bitmap):
     fs.seek(bitmap_offset)
     fs.write(bitmap)
 
-def createFile(fs_image, filename, content):
+def createFile(fs_image, filename, content, cwd_inode_number=0):
     with open(fs_image, 'r+b') as fs:
         block_bitmap = read_block_bitmap(fs)
-        root_inode = read_inode(fs, 0)
-        root_dir_block = root_inode.direct_blocks[0]
-        if root_dir_block is None:
-            print("Root directory is empty.")
+        parent_inode = read_inode(fs, cwd_inode_number)
+        parent_dir_block = parent_inode.direct_blocks[0]
+        if parent_dir_block is None:
+            print("Directory is empty.")
             return
-        dir_offset = root_dir_block * sp.block_size
+        dir_offset = parent_dir_block * sp.block_size
         fs.seek(dir_offset)
         try:
             dir_entries = pickle.load(fs)
         except Exception:
             dir_entries = []
+
+        # Check if file already exists
         for entry in dir_entries:
             if entry.name == filename:
                 print(f"File '{filename}' already exists.")
                 return
+
+        # Allocate blocks for file content
         content_bytes = content.encode('utf-8')
         block_size = sp.block_size
         num_blocks_needed = (len(content_bytes) + block_size - 1) // block_size
         if num_blocks_needed > 10:
             print("File too large for this simple file system (max 10 blocks).")
             return
+
         free_blocks = []
         for i, bit in enumerate(block_bitmap):
             if bit == 0:
@@ -69,13 +74,18 @@ def createFile(fs_image, filename, content):
         if len(free_blocks) < num_blocks_needed:
             print("Not enough free data blocks available.")
             return
+
+        # Write content to blocks
         for index, block_num in enumerate(free_blocks):
             data_offset = block_num * block_size
             fs.seek(data_offset)
             start = index * block_size
             end = start + block_size
             fs.write(content_bytes[start:end])
+
         write_block_bitmap(fs, block_bitmap)
+
+        # Find a free inode
         inode_bitmap = read_inode_bitmap(fs)
         free_inode_index = None
         for index, bit in enumerate(inode_bitmap):
@@ -86,6 +96,8 @@ def createFile(fs_image, filename, content):
         if free_inode_index is None:
             print("No free inodes available.")
             return
+
+        # Create inode for the new file
         inode = Inode()
         inode.file_size = len(content_bytes)
         inode.creation_time = time.time()
@@ -94,15 +106,13 @@ def createFile(fs_image, filename, content):
             inode.direct_blocks[i] = block_num
         write_inode(fs, free_inode_index, inode)
         write_inode_bitmap(fs, inode_bitmap)
-        fs.seek(dir_offset)
-        try:
-            dir_entries = pickle.load(fs)
-        except Exception:
-            dir_entries = []
+
+        # ✅ Correct: just update existing dir_entries, don't reload again
         dir_entries.append(DirectoryEntry(filename, free_inode_index))
         fs.seek(dir_offset)
         fs.write(pickle.dumps(dir_entries))
-        print(f"File '{filename}' created in {fs_image} with content: {content}")
+        print(f"File '{filename}' created in {fs_image} (directory inode {cwd_inode_number}) with content: {content}")
+
 
 def readFile(fs_image, filename):
     with open(fs_image, 'rb') as fs:
@@ -135,14 +145,14 @@ def readFile(fs_image, filename):
                 bytes_left -= to_read
         print(content_bytes.decode('utf-8'))
 
-def deleteFile(fs_image, filename):
+def deleteFile(fs_image, filename, cwd_inode_number=0):
     with open(fs_image, 'r+b') as fs:
-        root_inode = read_inode(fs, 0)
-        root_dir_block = root_inode.direct_blocks[0]
-        if root_dir_block is None:
-            print("Root directory is empty.")
+        parent_inode = read_inode(fs, cwd_inode_number)
+        parent_dir_block = parent_inode.direct_blocks[0]
+        if parent_dir_block is None:
+            print("Directory is empty.")
             return
-        dir_offset = root_dir_block * sp.block_size
+        dir_offset = parent_dir_block * sp.block_size
         fs.seek(dir_offset)
         try:
             dir_entries = pickle.load(fs)
@@ -156,16 +166,16 @@ def deleteFile(fs_image, filename):
                 inode = read_inode(fs, entry.inode_number)
                 if inode.is_directory:
                     print(f"⚠️ '{filename}' is a directory. Cannot delete a directory using deleteFile().")
-                    return  # Stop here, do not delete
+                    return
                 else:
                     entry_to_remove = entry
-                    break   # Only break when correct file is found
+                    break
         
         if not entry_to_remove:
             print(f"File '{filename}' not found.")
             return
 
-        # Now delete the file properly
+        # Remove file entry
         dir_entries.remove(entry_to_remove)
         inode_bitmap = read_inode_bitmap(fs)
         inode_bitmap[entry_to_remove.inode_number] = 0
@@ -180,10 +190,12 @@ def deleteFile(fs_image, filename):
                     block_bitmap[block_index] = 0
         write_block_bitmap(fs, block_bitmap)
         write_inode(fs, entry_to_remove.inode_number, Inode())
+
         fs.seek(dir_offset)
         fs.write(pickle.dumps(dir_entries))
 
-        print(f"✅ File '{filename}' deleted from {fs_image}.")
+        print(f"✅ File '{filename}' deleted from {fs_image} (directory inode {cwd_inode_number}).")
+
 
 
 def mkdir(fs_image, dirname, cwd_inode_number=0):
@@ -329,18 +341,29 @@ def move(fs_image, source_name, target_dir_name, cwd_inode_number=0):
         if not source_entry:
             print(f"Source '{source_name}' not found in current directory.")
             return
-        target_dir_entry = None
-        for entry in dir_entries:
-            if entry.name == target_dir_name:
-                target_dir_entry = entry
-                break
-        if not target_dir_entry:
-            print(f"Target directory '{target_dir_name}' not found in current directory.")
+# Special handling if target_dir_name == ".." meaning move to root
+        if target_dir_name == "..":
+            target_inode = read_inode(fs, 0)  # Root inode
+            target_dir_block = target_inode.direct_blocks[0]
+        else:
+            target_dir_entry = None
+            for entry in dir_entries:
+                if entry.name == target_dir_name:
+                    target_dir_entry = entry
+                    break
+            if not target_dir_entry:
+                print(f"Target directory '{target_dir_name}' not found in current directory.")
+                return
+            target_inode = read_inode(fs, target_dir_entry.inode_number)
+            if not target_inode.is_directory:
+                print(f"Target '{target_dir_name}' is not a directory.")
+                return
+            target_dir_block = target_inode.direct_blocks[0]
+
+        if target_dir_block is None:
+            print(f"Target directory '{target_dir_name}' has no data block.")
             return
-        target_inode = read_inode(fs, target_dir_entry.inode_number)
-        if not target_inode.is_directory:
-            print(f"Target '{target_dir_name}' is not a directory.")
-            return
+
         dir_entries.remove(source_entry)
         fs.seek(dir_offset)
         fs.write(pickle.dumps(dir_entries))
@@ -468,5 +491,6 @@ def show_memory_map(fs_image):
 
 if __name__ == "__main__":
     fs_image = "sample.dat"
-    print_root_directory(fs_image)
-    print_directory_tree(fs_image, 0)
+    createFile(fs_image, "test.txt", "Hello, World!")
+    open_file(fs_image, "test.txt", "r")
+    readFile(fs_image, "test.txt")

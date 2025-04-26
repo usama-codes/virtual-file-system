@@ -146,13 +146,13 @@ class VFSApp(tk.Tk):
 
         try:
             if op == "Create File":
-                createFile(self.fs_image, get("Filename"), get("Content"))
+                createFile(self.fs_image, get("Filename"), get("Content"), self.cwd_inode)
 
             elif op == "Read File":
                 readFile(self.fs_image, get("Filename"))
 
             elif op == "Delete File":
-                deleteFile(self.fs_image, get("Filename"))
+                deleteFile(self.fs_image, get("Filename"), self.cwd_inode)
 
             elif op == "Make Directory":
                 mkdir(self.fs_image, get("Directory Name"), self.cwd_inode)
@@ -173,7 +173,7 @@ class VFSApp(tk.Tk):
                 move(self.fs_image, get("Source Filename"), get("Target Directory"), self.cwd_inode)
 
             elif op == "Open File":
-                open_file(self.fs_image, get("Filename"), "w")
+                open_file(self.fs_image, get("Filename"), "w", self.cwd_inode)
 
             elif op == "Close File":
                 close_file(get("Filename"))
@@ -182,13 +182,13 @@ class VFSApp(tk.Tk):
                 show_memory_map(self.fs_image)
 
             elif op == "Write to File":
-                f = open_file(self.fs_image, get("Filename"), "w")
+                f = open_file(self.fs_image, get("Filename"), "w", self.cwd_inode)
                 if f:
                     f.Write_to_file(get("Content"))
                     close_file(get("Filename"))
 
             elif op == "Read from File":
-                f = open_file(self.fs_image, get("Filename"), "r")
+                f = open_file(self.fs_image, get("Filename"), "r", self.cwd_inode)
                 if f:
                     start = get("Start (optional)")
                     size = get("Size (optional)")
@@ -197,13 +197,13 @@ class VFSApp(tk.Tk):
                     close_file(get("Filename"))
 
             elif op == "Move Within File":
-                f = open_file(self.fs_image, get("Filename"), "w")
+                f = open_file(self.fs_image, get("Filename"), "w", self.cwd_inode)
                 if f:
                     f.Move_within_file(int(get("Start")), int(get("Size")), int(get("Target")))
                     close_file(get("Filename"))
 
             elif op == "Truncate File":
-                f = open_file(self.fs_image, get("Filename"), "w")
+                f = open_file(self.fs_image, get("Filename"), "w", self.cwd_inode)
                 if f:
                     f.Truncate_file(int(get("Max Size")))
                     close_file(get("Filename"))

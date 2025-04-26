@@ -149,22 +149,28 @@ def deleteFile(fs_image, filename):
         except Exception:
             print("No directory entries found.")
             return
+        
         entry_to_remove = None
         for entry in dir_entries:
             if entry.name == filename:
                 inode = read_inode(fs, entry.inode_number)
                 if inode.is_directory:
                     print(f"⚠️ '{filename}' is a directory. Cannot delete a directory using deleteFile().")
-                return
-            entry_to_remove = entry
-            break
+                    return  # Stop here, do not delete
+                else:
+                    entry_to_remove = entry
+                    break   # Only break when correct file is found
+        
         if not entry_to_remove:
             print(f"File '{filename}' not found.")
             return
+
+        # Now delete the file properly
         dir_entries.remove(entry_to_remove)
         inode_bitmap = read_inode_bitmap(fs)
         inode_bitmap[entry_to_remove.inode_number] = 0
         write_inode_bitmap(fs, inode_bitmap)
+        
         inode = read_inode(fs, entry_to_remove.inode_number)
         block_bitmap = read_block_bitmap(fs)
         for block in inode.direct_blocks:
@@ -176,7 +182,9 @@ def deleteFile(fs_image, filename):
         write_inode(fs, entry_to_remove.inode_number, Inode())
         fs.seek(dir_offset)
         fs.write(pickle.dumps(dir_entries))
-        print(f"File '{filename}' deleted from {fs_image}.")
+
+        print(f"✅ File '{filename}' deleted from {fs_image}.")
+
 
 def mkdir(fs_image, dirname, cwd_inode_number=0):
     with open(fs_image, 'r+b') as fs:
@@ -351,7 +359,7 @@ def move(fs_image, source_name, target_dir_name, cwd_inode_number=0):
         fs.write(pickle.dumps(target_dir_entries))
         print(f"Moved '{source_name}' to directory '{target_dir_name}'.")
 
-'''def print_root_directory(fs_image):
+def print_root_directory(fs_image):
     with open(fs_image, 'rb') as fs:
         root_inode = read_inode(fs, 0)
         root_dir_block = root_inode.direct_blocks[0]
@@ -392,7 +400,7 @@ def print_directory_tree(fs_image, inode_number=0, indent=0):
                 print(" " * indent + f"[DIR] {entry.name} (inode {entry.inode_number})")
                 print_directory_tree(fs_image, entry.inode_number, indent + 4)
             else:
-                print(" " * indent + f"[FILE] {entry.name} (inode {entry.inode_number})")'''
+                print(" " * indent + f"[FILE] {entry.name} (inode {entry.inode_number})")
 
 def get_available_directories(self):
     dirs = []

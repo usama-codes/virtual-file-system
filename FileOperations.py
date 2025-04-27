@@ -114,17 +114,21 @@ def createFile(fs_image, filename, content, cwd_inode_number=0):
         print(f"File '{filename}' created in {fs_image} (directory inode {cwd_inode_number}) with content: {content}")
 
 
-def readFile(fs_image, filename):
+def readFile(fs_image, filename, cwd_inode_number=0):
     with open(fs_image, 'rb') as fs:
-        root_inode = read_inode(fs, 0)
-        root_dir_block = root_inode.direct_blocks[0]
-        dir_offset = root_dir_block * sp.block_size
+        current_inode = read_inode(fs, cwd_inode_number)
+        dir_block = current_inode.direct_blocks[0]
+        if dir_block is None:
+            print("Directory is empty.")
+            return
+        dir_offset = dir_block * sp.block_size
         fs.seek(dir_offset)
         try:
             dir_entries = pickle.load(fs)
         except Exception:
             print("Failed to read directory entries.")
             return
+
         file_inode_num = None
         for entry in dir_entries:
             if entry.name == filename:
@@ -133,6 +137,7 @@ def readFile(fs_image, filename):
         if file_inode_num is None:
             print(f"File '{filename}' not found.")
             return
+
         inode = read_inode(fs, file_inode_num)
         content_bytes = b''
         bytes_left = inode.file_size
@@ -143,7 +148,9 @@ def readFile(fs_image, filename):
                 to_read = min(bytes_left, sp.block_size)
                 content_bytes += fs.read(to_read)
                 bytes_left -= to_read
+
         print(content_bytes.decode('utf-8'))
+
 
 def deleteFile(fs_image, filename, cwd_inode_number=0):
     with open(fs_image, 'r+b') as fs:

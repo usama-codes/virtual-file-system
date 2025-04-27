@@ -149,7 +149,7 @@ class VFSApp(tk.Tk):
                 createFile(self.fs_image, get("Filename"), get("Content"), self.cwd_inode)
 
             elif op == "Read File":
-                readFile(self.fs_image, get("Filename"))
+                readFile(self.fs_image, get("Filename"), self.cwd_inode)
 
             elif op == "Delete File":
                 deleteFile(self.fs_image, get("Filename"), self.cwd_inode)

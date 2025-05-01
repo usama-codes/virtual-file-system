@@ -1,104 +1,89 @@
-import tkinter as tk
-from tkinter import ttk, messagebox
-import sys
-import io
+import customtkinter as ctk
+import sys, io, pickle
 from FileOperations import *
 from DataStrucures import open_file, close_file
 import SystemInitializer
 
-# --- GUI App ---
-class VFSApp(tk.Tk):
+ctk.set_appearance_mode("dark")
+ctk.set_default_color_theme("blue")
+
+class VFSApp(ctk.CTk):
     def __init__(self):
         super().__init__()
         self.title("🗂️ Virtual File System")
-
-        # --- Set fixed window size and center it ---
-        window_width = 500
-        window_height = 400
-        screen_width = self.winfo_screenwidth()
-        screen_height = self.winfo_screenheight()
-        x = (screen_width // 2) - (window_width // 2)
-        y = (screen_height // 2) - (window_height // 2)
-        self.geometry(f"{window_width}x{window_height}+{x}+{y}")
+        self.geometry("800x500")
         self.resizable(False, False)
-
-        self.configure(bg="#1e1e1e")
-
-        # --- Improved styling ---
-        self.style = ttk.Style(self)
-        self.style.theme_use("clam")
-        self.style.map('TCombobox', 
-        fieldbackground=[('readonly', 'white')],
-        background=[('readonly', 'white')],
-        foreground=[('readonly', 'black')],
-        arrowcolor=[('readonly', 'black')]
-        )
-
-        better_font = ("Segoe UI", 10)  # <-- Slightly bigger, sharper font
-
-        self.style.configure("TLabel", background="#1e1e1e", foreground="#d4d4d4", font=better_font)
-        self.style.configure("TButton", background="#0e639c", foreground="white", font=better_font)
-        self.style.configure("TEntry", fieldbackground="#2d2d30", foreground="white", font=better_font)
-        self.style.configure("TCombobox", fieldbackground="#2d2d30", background="#2d2d30", foreground="white", font=better_font)
 
         self.fs_image = "sample.dat"
         self.cwd_inode = 0
-
         self.output_capture = io.StringIO()
         sys.stdout = self.output_capture
         self.after(100, self.update_output)
 
         self.create_widgets()
 
-
     def create_widgets(self):
-        tk.Label(self, text="Choose Operation:", bg="#1e1e1e", fg="#d4d4d4").pack(pady=10)
+        # Sidebar
+        self.sidebar = ctk.CTkFrame(self, width=200)
+        self.sidebar.pack(side="left", fill="y", padx=10, pady=10)
 
-        self.operation = ttk.Combobox(self, values=[
+        self.main_frame = ctk.CTkFrame(self)
+        self.main_frame.pack(side="right", expand=True, fill="both", padx=10, pady=10)
+
+        self.buttons = {}
+        self.operations = [
             "Create File", "Read File", "Delete File", "Make Directory",
             "Change Directory", "Move File", "Open File", "Close File",
             "Show Memory Map", "Write to File", "Read from File",
             "Move Within File", "Truncate File"
-        ], state="readonly")
-        self.operation.pack(pady=5)
-        self.operation.bind("<<ComboboxSelected>>", self.show_fields)
+        ]
 
-        self.current_dir_label = ttk.Label(self, text="Current Directory: /", font=("Segoe UI", 8))
-        self.current_dir_label.pack(pady=5)
+        for op in self.operations:
+            btn = ctk.CTkButton(self.sidebar, text=op, corner_radius=20, fg_color="#d3d3d3", text_color="black",
+                                hover_color="#c0c0c0", command=lambda o=op: self.select_operation(o))
+            btn.pack(pady=4, fill="x")
+            self.buttons[op] = btn
 
-        self.fields_frame = tk.Frame(self, bg="#1e1e1e")
-        self.fields_frame.pack(pady=10)
+        self.current_dir_label = ctk.CTkLabel(self.main_frame, text="Current Directory: /", anchor="w")
+        self.current_dir_label.pack(pady=5, fill="x")
 
-        self.execute_btn = tk.Button(self, text="Execute", command=self.run_command, bg="#0e639c", fg="white")
-        self.execute_btn.pack(pady=10)
+        self.fields_frame = ctk.CTkFrame(self.main_frame)
+        self.fields_frame.pack(fill="x", pady=10)
 
-        self.output = tk.Text(self, height=6, bg="#252526", fg="#d4d4d4", wrap="word")
-        self.output.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        self.execute_btn = ctk.CTkButton(self.main_frame, text="Execute", command=self.run_command)
+        self.execute_btn.pack(pady=5)
+
+        self.output = ctk.CTkTextbox(self.main_frame, height=100)
+        self.output.pack(fill="both", expand=True, padx=5, pady=10)
+
+        self.current_operation = None
+        self.inputs = {}
 
     def update_output(self):
         new_output = self.output_capture.getvalue()
         if new_output:
-            self.output.insert(tk.END, new_output)
+            self.output.insert("end", new_output)
             self.output_capture.truncate(0)
             self.output_capture.seek(0)
-            self.output.see(tk.END)
+            self.output.see("end")
         self.after(100, self.update_output)
 
-    def show_fields(self, event):
+    def select_operation(self, operation):
+        self.current_operation = operation
+
+        # Highlight selection
+        for op, btn in self.buttons.items():
+            btn.configure(fg_color="white" if op != operation else "#1e90ff", text_color="black")
+
         for widget in self.fields_frame.winfo_children():
             widget.destroy()
-
-        op = self.operation.get()
         self.inputs = {}
 
-        def add_field(name, is_dropdown=False, options=None):
-            label = ttk.Label(self.fields_frame, text=name + ":")
+        def add_field(name):
+            label = ctk.CTkLabel(self.fields_frame, text=name + ":")
             label.pack()
-            if is_dropdown:
-                entry = ttk.Combobox(self.fields_frame, values=options or [], state="readonly")
-            else:
-                entry = ttk.Entry(self.fields_frame)
-            entry.pack(fill=tk.X)
+            entry = ctk.CTkEntry(self.fields_frame)
+            entry.pack(fill="x", pady=2)
             self.inputs[name] = entry
 
         fields_map = {
@@ -115,11 +100,15 @@ class VFSApp(tk.Tk):
             "Truncate File": ["Filename", "Max Size"]
         }
 
-        if op == "Change Directory":
+        if operation == "Change Directory":
             dirs = self.get_available_directories()
-            add_field("Directory Name", is_dropdown=True, options=dirs)
+            label = ctk.CTkLabel(self.fields_frame, text="Directory Name:")
+            label.pack()
+            entry = ctk.CTkComboBox(self.fields_frame, values=dirs)
+            entry.pack(fill="x", pady=2)
+            self.inputs["Directory Name"] = entry
         else:
-            for field in fields_map.get(op, []):
+            for field in fields_map.get(operation, []):
                 add_field(field)
 
     def get_available_directories(self):
@@ -140,9 +129,9 @@ class VFSApp(tk.Tk):
         return dirs
 
     def run_command(self):
-        op = self.operation.get()
+        op = self.current_operation
         get = lambda name: self.inputs[name].get()
-        self.output.delete(1.0, tk.END)
+        self.output.delete("1.0", "end")
 
         try:
             if op == "Create File":
@@ -161,13 +150,12 @@ class VFSApp(tk.Tk):
                 dir_name = get("Directory Name")
                 if dir_name == ".. (Go Up)":
                     self.cwd_inode = 0
-                    self.current_dir_label.config(text="Current Directory: /")
+                    self.current_dir_label.configure(text="Current Directory: /")
                 else:
                     new_inode = chdir(self.fs_image, dir_name, self.cwd_inode)
                     if new_inode != self.cwd_inode:
                         self.cwd_inode = new_inode
-                        self.current_dir_label.config(text=f"Current Directory: /{dir_name}")
-
+                        self.current_dir_label.configure(text=f"Current Directory: /{dir_name}")
 
             elif op == "Move File":
                 move(self.fs_image, get("Source Filename"), get("Target Directory"), self.cwd_inode)
@@ -210,9 +198,6 @@ class VFSApp(tk.Tk):
 
         except Exception as e:
             print(f"⚠️ Error: {e}")
-
-        for widget in self.fields_frame.winfo_children():
-            widget.destroy()    # Also clear input fields
 
 if __name__ == "__main__":
     app = VFSApp()

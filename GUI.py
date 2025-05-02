@@ -2,7 +2,7 @@ import customtkinter as ctk
 import sys, io, pickle
 from FileOperations import *
 from DataStrucures import open_file, close_file
-import SystemInitializer
+
 
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
@@ -197,7 +197,7 @@ class VFSApp(ctk.CTk):
                     close_file(get("Filename"))
 
         except Exception as e:
-            print(f"⚠️ Error: {e}")
+            print(f"Error: {e}")
 
 if __name__ == "__main__":
     app = VFSApp()

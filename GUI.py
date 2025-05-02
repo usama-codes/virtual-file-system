@@ -39,7 +39,7 @@ class VFSApp(ctk.CTk):
         ]
 
         for op in self.operations:
-            btn = ctk.CTkButton(self.sidebar, text=op, corner_radius=20, fg_color="#d3d3d3", text_color="black",
+            btn = ctk.CTkButton(self.sidebar, text=op, corner_radius=10, fg_color="#d3d3d3", text_color="black",
                                 hover_color="#c0c0c0", command=lambda o=op: self.select_operation(o))
             btn.pack(pady=4, fill="x")
             self.buttons[op] = btn

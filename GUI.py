@@ -1,8 +1,8 @@
 import customtkinter as ctk
-import sys, io, pickle
+import sys, io, pickle, threading, shutil
+from tkinter import filedialog
 from FileOperations import *
 from DataStrucures import open_file, close_file
-
 
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
@@ -10,7 +10,7 @@ ctk.set_default_color_theme("blue")
 class VFSApp(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.title("🗂️ Virtual File System")
+        self.title("📂 Virtual File System")
         self.geometry("800x500")
         self.resizable(False, False)
 
@@ -23,7 +23,6 @@ class VFSApp(ctk.CTk):
         self.create_widgets()
 
     def create_widgets(self):
-        # Sidebar
         self.sidebar = ctk.CTkFrame(self, width=200)
         self.sidebar.pack(side="left", fill="y", padx=10, pady=10)
 
@@ -56,6 +55,19 @@ class VFSApp(ctk.CTk):
         self.output = ctk.CTkTextbox(self.main_frame, height=100)
         self.output.pack(fill="both", expand=True, padx=5, pady=10)
 
+        self.threading_frame = ctk.CTkFrame(self.main_frame)
+        self.threading_frame.pack(fill="x", pady=5)
+
+        self.thread_label = ctk.CTkLabel(self.threading_frame, text="Number of Threads:")
+        self.thread_label.pack(side="left", padx=5)
+
+        self.thread_count_entry = ctk.CTkEntry(self.threading_frame, width=50)
+        self.thread_count_entry.pack(side="left", padx=5)
+        self.thread_count_entry.insert(0, "2")
+
+        self.run_threads_btn = ctk.CTkButton(self.threading_frame, text="Run Threads", command=self.run_threads)
+        self.run_threads_btn.pack(side="left", padx=5)
+
         self.current_operation = None
         self.inputs = {}
 
@@ -71,7 +83,6 @@ class VFSApp(ctk.CTk):
     def select_operation(self, operation):
         self.current_operation = operation
 
-        # Highlight selection
         for op, btn in self.buttons.items():
             btn.configure(fg_color="white" if op != operation else "#1e90ff", text_color="black")
 
@@ -136,16 +147,12 @@ class VFSApp(ctk.CTk):
         try:
             if op == "Create File":
                 createFile(self.fs_image, get("Filename"), get("Content"), self.cwd_inode)
-
             elif op == "Read File":
                 readFile(self.fs_image, get("Filename"), self.cwd_inode)
-
             elif op == "Delete File":
                 deleteFile(self.fs_image, get("Filename"), self.cwd_inode)
-
             elif op == "Make Directory":
                 mkdir(self.fs_image, get("Directory Name"), self.cwd_inode)
-
             elif op == "Change Directory":
                 dir_name = get("Directory Name")
                 if dir_name == ".. (Go Up)":
@@ -156,25 +163,21 @@ class VFSApp(ctk.CTk):
                     if new_inode != self.cwd_inode:
                         self.cwd_inode = new_inode
                         self.current_dir_label.configure(text=f"Current Directory: /{dir_name}")
-
             elif op == "Move File":
                 move(self.fs_image, get("Source Filename"), get("Target Directory"), self.cwd_inode)
-
             elif op == "Open File":
                 open_file(self.fs_image, get("Filename"), "w", self.cwd_inode)
-
             elif op == "Close File":
                 close_file(get("Filename"))
-
             elif op == "Show Memory Map":
-                show_memory_map(self.fs_image)
-
+                result = show_memory_map(self.fs_image)
+                if result:
+                    print(result)
             elif op == "Write to File":
                 f = open_file(self.fs_image, get("Filename"), "w", self.cwd_inode)
                 if f:
                     f.Write_to_file(get("Content"))
                     close_file(get("Filename"))
-
             elif op == "Read from File":
                 f = open_file(self.fs_image, get("Filename"), "r", self.cwd_inode)
                 if f:
@@ -183,21 +186,72 @@ class VFSApp(ctk.CTk):
                     result = f.Read_from_file(int(start) if start else None, int(size) if size else None)
                     print(result)
                     close_file(get("Filename"))
-
             elif op == "Move Within File":
                 f = open_file(self.fs_image, get("Filename"), "w", self.cwd_inode)
                 if f:
                     f.Move_within_file(int(get("Start")), int(get("Size")), int(get("Target")))
                     close_file(get("Filename"))
-
             elif op == "Truncate File":
                 f = open_file(self.fs_image, get("Filename"), "w", self.cwd_inode)
                 if f:
                     f.Truncate_file(int(get("Max Size")))
                     close_file(get("Filename"))
-
         except Exception as e:
             print(f"Error: {e}")
+
+    def run_threads(self):
+        try:
+            num_threads = int(self.thread_count_entry.get())
+        except ValueError:
+            print("Please enter a valid number of threads.")
+            return
+
+        # Prompt user to select a master input file
+        input_path = filedialog.askopenfilename(title="Select master input file", filetypes=[("Text Files", "*.txt")])
+        if not input_path:
+            print("No input file selected.")
+            return
+
+        fs_lock = threading.Lock()
+
+        def thread_task(thread_id):
+            input_file = f"input_thread{thread_id}.txt"
+            output_file = f"output_thread{thread_id}.txt"
+            with open(input_file, 'r') as infile, open(output_file, 'w', encoding='utf-8') as outfile:
+                for line in infile:
+                    command = line.strip()
+                    if not command or command.startswith("#"):
+                        continue
+                    with fs_lock:
+                        try:
+                            result = execute_command(command)
+                            if result is not None:
+                                outfile.write(str(result) + '\n')
+                                print(result)
+                        except Exception as e:
+                            error_msg = f"Thread {thread_id} Error: {e}"
+                            outfile.write(error_msg + '\n')
+                            print(error_msg)
+
+        try:
+            for i in range(num_threads):
+                thread_input_file = f"input_thread{i}.txt"
+                shutil.copy(input_path, thread_input_file)
+                print(f"Created {thread_input_file} from {input_path}")
+        except Exception as e:
+            print(f"Failed to prepare input files: {e}")
+            return
+
+        threads = []
+        for i in range(num_threads):
+            t = threading.Thread(target=thread_task, args=(i,))
+            threads.append(t)
+            t.start()
+
+        for t in threads:
+            t.join()
+
+        print("\u2705 All threads completed.")
 
 if __name__ == "__main__":
     app = VFSApp()

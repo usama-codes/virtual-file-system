@@ -1,8 +1,15 @@
 import time
 import pickle
+import threading
+import threading
 
-# Global table to keep track of open files
-open_file_table = {}
+# Instead of a global dict, use thread-local storage
+thread_local_data = threading.local()
+def get_thread_open_file_table():
+    if not hasattr(thread_local_data, "open_file_table"):
+        thread_local_data.open_file_table = {}
+    return thread_local_data.open_file_table
+open_file_table_lock = threading.Lock()
 
 class Superblock:
     def __init__(self):
@@ -225,9 +232,7 @@ class FileObject:
 # Function to open a file in the filesystem
 def open_file(fs_image, filename, mode='r', cwd_inode_number=0):
     sp = Superblock()
-    
     from FileOperations import read_inode
-
     with open(fs_image, 'rb') as fs:
         # Find the file in the current directory
         current_inode = read_inode(fs, cwd_inode_number)
@@ -242,11 +247,17 @@ def open_file(fs_image, filename, mode='r', cwd_inode_number=0):
         except Exception:
             print("Failed to read directory entries.")
             return None
+        with open_file_table_lock:
+            if filename in get_thread_open_file_table():    
+                print(f"File '{filename}' is already open.")
+                return get_thread_open_file_table()[filename]
+            
         for entry in dir_entries:
             if entry.name == filename:
                 print("file is opened")
                 file_obj = FileObject(fs_image, entry.inode_number, mode)
-                open_file_table[filename] = file_obj
+                with open_file_table_lock:
+                    get_thread_open_file_table()[filename] = file_obj
                 return file_obj               
         print(f"File '{filename}' not found.")
         return None
@@ -254,12 +265,11 @@ def open_file(fs_image, filename, mode='r', cwd_inode_number=0):
 
 # Function to close a file
 def close_file(filename):
-    global open_file_table
-
-    if filename in open_file_table:
-        file_obj = open_file_table[filename]
-        file_obj.fs.close()  # Close the actual file stream
-        del open_file_table[filename]  # Remove from open table
-        print(f"File '{filename}' closed.")
-    else:
-        print(f"File '{filename}' is not currently open.")
+    with open_file_table_lock:
+        if filename in get_thread_open_file_table():
+            file_obj = get_thread_open_file_table()[filename]
+            file_obj.fs.close()  # Close the actual file stream
+            del get_thread_open_file_table()[filename]  # Remove from open table
+            print(f"File '{filename}' closed.")
+        else:
+            print(f"File '{filename}' is not currently open.")

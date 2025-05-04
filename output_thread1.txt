@@ -1,0 +1,31 @@
+File file1.txt created.
+File file1.txt opened in w mode.
+Wrote to file1.txt: abcd
+File file2.txt created.
+File file2.txt opened in w mode.
+
+Filesystem Memory Map
+
+📁 /
+    📁 dir1
+        📄 test2.txt
+    📁 dir2
+        📄 test3.txt
+    📄 file1.txt
+    📄 file2.txt
+    📄 test1.txt
+Wrote to file2.txt: 123
+Wrote to file1.txt: xyz
+File file1.txt closed.
+File file2.txt closed.
+
+Filesystem Memory Map
+
+📁 /
+    📁 dir1
+        📄 test2.txt
+    📁 dir2
+        📄 test3.txt
+    📄 file1.txt
+    📄 file2.txt
+    📄 test1.txt

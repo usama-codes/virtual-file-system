@@ -1,0 +1,11 @@
+create file1.txt
+open file1.txt w
+write_to_file file1.txt "abcd"
+create file2.txt
+open file2.txt w
+show_memory_map
+write_to_file file2.txt "123"
+write_to_file file1.txt "xyz"
+close file1.txt
+close file2.txt
+show_memory_map

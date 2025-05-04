@@ -1,9 +1,10 @@
-from DataStrucures import Superblock, Inode, DirectoryEntry, open_file_table, open_file
+from DataStrucures import Superblock, Inode, DirectoryEntry, get_thread_open_file_table, open_file, FileObject, close_file
 import pickle
 import time
 
 sp = Superblock()
 INODE_SIZE = 256  # Adjust if needed
+fs_image = "sample.dat"  # Default filesystem image
 
 def read_inode_bitmap(fs):
     inode_bitmap_offset = sp.inodes_bitmap_start * sp.block_size
@@ -151,7 +152,6 @@ def readFile(fs_image, filename, cwd_inode_number=0):
 
         print(content_bytes.decode('utf-8'))
 
-
 def deleteFile(fs_image, filename, cwd_inode_number=0):
     with open(fs_image, 'r+b') as fs:
         parent_inode = read_inode(fs, cwd_inode_number)
@@ -202,8 +202,6 @@ def deleteFile(fs_image, filename, cwd_inode_number=0):
         fs.write(pickle.dumps(dir_entries))
 
         print(f"✅ File '{filename}' deleted from {fs_image} (directory inode {cwd_inode_number}).")
-
-
 
 def mkdir(fs_image, dirname, cwd_inode_number=0):
     with open(fs_image, 'r+b') as fs:
@@ -389,48 +387,6 @@ def move(fs_image, source_name, target_dir_name, cwd_inode_number=0):
         fs.write(pickle.dumps(target_dir_entries))
         print(f"Moved '{source_name}' to directory '{target_dir_name}'.")
 
-def print_root_directory(fs_image):
-    with open(fs_image, 'rb') as fs:
-        root_inode = read_inode(fs, 0)
-        root_dir_block = root_inode.direct_blocks[0]
-        if root_dir_block is None:
-            print("Root directory is empty.")
-            return
-        dir_offset = root_dir_block * sp.block_size
-        fs.seek(dir_offset)
-        try:
-            dir_entries = pickle.load(fs)
-            print("Root directory entries:")
-            for entry in dir_entries:
-                print(f"  Name: {entry.name}, Inode: {entry.inode_number}")
-        except Exception as e:
-            print("Failed to read directory entries:", e)
-
-def print_directory_tree(fs_image, inode_number=0, indent=0):
-    with open(fs_image, 'rb') as fs:
-        inode = read_inode(fs, inode_number)
-        if not inode.is_directory:
-            print(" " * indent + f"(file) inode {inode_number}")
-            return
-        dir_block = inode.direct_blocks[0]
-        if dir_block is None:
-            print(" " * indent + f"(empty dir) inode {inode_number}")
-            return
-        dir_offset = dir_block * sp.block_size
-        fs.seek(dir_offset)
-        try:
-            dir_entries = pickle.load(fs)
-        except Exception:
-            print(" " * indent + "(unreadable directory)")
-            return
-
-        for entry in dir_entries:
-            entry_inode = read_inode(fs, entry.inode_number)
-            if entry_inode.is_directory:
-                print(" " * indent + f"[DIR] {entry.name} (inode {entry.inode_number})")
-                print_directory_tree(fs_image, entry.inode_number, indent + 4)
-            else:
-                print(" " * indent + f"[FILE] {entry.name} (inode {entry.inode_number})")
 
 def get_available_directories(self):
     dirs = []
@@ -452,18 +408,16 @@ def get_available_directories(self):
     return dirs
 
 
-def close_file(filename):
-    global open_file_table
+def show_memory_map(fs_image, output=None):
+    output_lines = []
 
-    if filename in open_file_table:
-        open_file_table[filename].fs.close()
-        del open_file_table[filename]
-        print(f"File '{filename}' closed.")
-    else:
-        print(f"File '{filename}' is not open.")
+    def write(line):
+        if output:
+            output.write(line + "\n")
+        else:
+            output_lines.append(line)
 
-def show_memory_map(fs_image):
-    print("\nFilesystem Memory Map\n")
+    write("\nFilesystem Memory Map\n")
 
     def dfs(fs, inode_num, indent=0):
         inode = read_inode(fs, inode_num)
@@ -471,29 +425,74 @@ def show_memory_map(fs_image):
 
         if inode.is_directory:
             if inode_num == 0:
-                print(f"{prefix}📁 /")
+                write(f"{prefix}📁 /")
             else:
-                print(f"{prefix}📁 {current_name[0]}")
+                write(f"{prefix}📁 {current_name[0]}")
 
             dir_block = inode.direct_blocks[0]
             if dir_block is not None:
                 fs.seek(dir_block * sp.block_size)
                 try:
                     entries = pickle.load(fs)
-                    entries = sorted(entries, key=lambda e: e.name)  # Sort entries alphabetically
+                    entries = sorted(entries, key=lambda e: e.name)
                     for entry in entries:
                         entry_inode = read_inode(fs, entry.inode_number)
                         current_name[0] = entry.name
                         dfs(fs, entry.inode_number, indent + 1)
                 except Exception as e:
-                    print(f"{prefix}⚠️ Failed to read entries: {e}")
+                    write(f"{prefix}⚠️ Failed to read entries: {e}")
         else:
-            print(f"{prefix}📄 {current_name[0]}")
+            write(f"{prefix}📄 {current_name[0]}")
 
     with open(fs_image, 'rb') as fs:
         sp = Superblock()
         current_name = ["/"]
         dfs(fs, 0)
+
+    if output:
+        return None  # Already written to stream
+    return "\n".join(output_lines)
+
+
+def execute_command(command, outfile=None):
+    parts = command.split()
+
+    # CREATE FILE
+    if parts[0] == "create":
+        filename = parts[1]
+        createFile(fs_image, filename, " ",0)
+        return f"File {filename} created."
+
+    # OPEN FILE
+    elif parts[0] == "open" and len(parts) >= 3:
+        filename = parts[1]
+        mode = parts[2]
+        open_file(fs_image,filename, mode, 0)
+        return f"File {filename} opened in {mode} mode."
+
+    # WRITE TO FILE
+    elif parts[0] == "write_to_file" and len(parts) >= 3:
+        filename = parts[1]
+        data = command.split('"', 1)[1].rsplit('"', 1)[0]  # Extracts the string data
+        file_obj: FileObject = get_thread_open_file_table().get(filename)
+        if not file_obj:
+            return f"Error: {filename} is not open"
+        file_obj.Write_to_file(data)
+        return f"Wrote to {filename}: {data}"
+
+    # CLOSE FILE
+    elif parts[0] == "close" and len(parts) >= 2:
+        filename = parts[1]
+        close_file(filename)
+        return f"File {filename} closed."
+
+    # SHOW MEMORY MAP
+    elif parts[0] == "show_memory_map":
+        return show_memory_map(fs_image)  # Assuming this doesn't need arguments.
+
+    # INVALID COMMAND
+    else:
+        return "Invalid command."
 
 
 if __name__ == "__main__":

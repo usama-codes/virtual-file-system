@@ -455,45 +455,125 @@ def show_memory_map(fs_image, output=None):
 
 
 def execute_command(command, outfile=None):
-    parts = command.split()
+    parts = command.strip().split()
 
-    # CREATE FILE
-    if parts[0] == "create":
+    if not parts:
+        return "Empty command."
+
+    cmd = parts[0].lower()
+    oft = get_thread_open_file_table()
+
+    # I. Create(fName)
+    if cmd == "create" and len(parts) == 2:
         filename = parts[1]
-        createFile(fs_image, filename, " ",0)
+        createFile(fs_image, filename, "", 0)
         return f"File {filename} created."
 
-    # OPEN FILE
-    elif parts[0] == "open" and len(parts) >= 3:
+    # II. Delete(fName)
+    elif cmd == "delete" and len(parts) == 2:
+        filename = parts[1]
+        deleteFile(fs_image, filename, 0)
+        return f"File {filename} deleted."
+
+    # III. Mkdir(dirName)
+    elif cmd == "mkdir" and len(parts) == 2:
+        dirname = parts[1]
+        mkdir(fs_image, dirname, 0)
+        return f"Directory {dirname} created."
+
+    # IV. chDir(dirName)
+    elif cmd == "chdir" and len(parts) == 2:
+        dirname = parts[1]
+        chdir(fs_image, dirname,0)
+        return f"Changed directory to {dirname}."
+
+    # V. Move(source_fName, target_fName)
+    elif cmd == "move" and len(parts) == 3:
+        src = parts[1]
+        dest = parts[2]
+        move(fs_image, src, dest, 0)
+        return f"Moved {src} to {dest}."
+
+    # VI. Open(fName, mode)
+    elif cmd == "open" and len(parts) == 3:
         filename = parts[1]
         mode = parts[2]
-        open_file(fs_image,filename, mode, 0)
+        open_file(fs_image, filename, mode, 0)
         return f"File {filename} opened in {mode} mode."
 
-    # WRITE TO FILE
-    elif parts[0] == "write_to_file" and len(parts) >= 3:
-        filename = parts[1]
-        data = command.split('"', 1)[1].rsplit('"', 1)[0]  # Extracts the string data
-        file_obj: FileObject = get_thread_open_file_table().get(filename)
-        if not file_obj:
-            return f"Error: {filename} is not open"
-        file_obj.Write_to_file(data)
-        return f"Wrote to {filename}: {data}"
-
-    # CLOSE FILE
-    elif parts[0] == "close" and len(parts) >= 2:
+    # VII. Close(fName)
+    elif cmd == "close" and len(parts) == 2:
         filename = parts[1]
         close_file(filename)
         return f"File {filename} closed."
 
-    # SHOW MEMORY MAP
-    elif parts[0] == "show_memory_map":
-        return show_memory_map(fs_image)  # Assuming this doesn't need arguments.
+    # VIII. Write to file: write_to_file(fName, "text") or write_to_file(fName, position, "text")
+    elif cmd == "write_to_file":
+        if len(parts) >= 3:
+            filename = parts[1]
+            file_obj = oft.get(filename)
+            if not file_obj:
+                return f"Error: {filename} is not open"
 
-    # INVALID COMMAND
-    else:
-        return "Invalid command."
+            if parts[2].isdigit():
+                # write_to_file(filename, position, "text")
+                write_at = int(parts[2])
+                data = command.split('"', 1)[1].rsplit('"', 1)[0]
+                file_obj.write_to_file(write_at, data)
+                return f"Wrote to {filename} at position {write_at}: {data}"
+            else:
+                # write_to_file(filename, "text")
+                data = command.split('"', 1)[1].rsplit('"', 1)[0]
+                file_obj.Write_to_file(data)
+                return f"Wrote to {filename}: {data}"
 
+    # IX. Read from file: read_from_file(fName) or read_from_file(fName, start, size)
+    elif cmd == "read_from_file":
+        if len(parts) == 2:
+            filename = parts[1]
+            file_obj = oft.get(filename)
+            if not file_obj:
+                return f"Error: {filename} is not open"
+            data = file_obj.Read_from_file()
+            return f"Data from {filename}: {data}"
+        elif len(parts) == 4:
+            filename = parts[1]
+            start = int(parts[2])
+            size = int(parts[3])
+            file_obj = oft.get(filename)
+            if not file_obj:
+                return f"Error: {filename} is not open"
+            data = file_obj.Read_from_file(start, size)
+            return f"Data from {filename} (from {start} for {size}): {data}"
+
+    # X. Move within file: move_within_file(fName, start, size, target)
+    elif cmd == "move_within_file" and len(parts) == 5:
+        filename = parts[1]
+        start = int(parts[2])
+        size = int(parts[3])
+        target = int(parts[4])
+        file_obj = oft.get(filename)
+        if not file_obj:
+            return f"Error: {filename} is not open"
+        file_obj.Move_within_file(start, size, target)
+        return f"Moved {size} bytes in {filename} from {start} to {target}."
+
+    # XI. Truncate file: truncate_file(fName, maxSize)
+    elif cmd == "truncate_file" and len(parts) == 3:
+        filename = parts[1]
+        max_size = int(parts[2])
+        file_obj = oft.get(filename)
+        if not file_obj:
+            return f"Error: {filename} is not open"
+        file_obj.Truncate_file(max_size)
+        return f"Truncated {filename} to max size {max_size}."
+
+    # XII. Show memory map
+    elif cmd == "show_memory_map":
+            return show_memory_map(fs_image)  # This function already handles printing.
+
+    # Invalid command
+    return "Invalid or malformed command."
 
 if __name__ == "__main__":
     fs_image = "sample.dat"
